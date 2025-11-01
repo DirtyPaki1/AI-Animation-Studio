@@ -6,39 +6,101 @@ export default function TalkingAvatar() {
   const [text, setText] = useState('')
   const [speaking, setSpeaking] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string>('')
+  const [error, setError] = useState<string>('')
+  const [info, setInfo] = useState<string>('')
   const mouthControls = useAnimation()
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const speak = async () => {
     if (!text.trim()) return
     setSpeaking(true)
+    setError('')
+    setInfo('')
     
     try {
-      const response = await fetch('/api/avatar', {
+      console.log('Attempting to generate speech...')
+      
+      const response = await fetch('/api/ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          text,
+          type: 'speech'
+        }),
       })
       
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`)
+      }
+
       const data = await response.json()
+      console.log('API response:', data)
       
       if (data.audioUrl) {
         setAudioUrl(data.audioUrl)
-        
-        // Start mouth animation
-        mouthControls.start({
-          scaleY: [1, 0.3, 1],
-          transition: {
-            duration: 0.2,
-            repeat: Infinity,
-            repeatType: 'reverse',
-          },
-        })
+        setInfo('Using AI-generated speech')
+        startMouthAnimation()
+      } else {
+        throw new Error('Unexpected response from server')
       }
     } catch (error) {
-      console.error('Error generating speech:', error)
-      alert('Failed to generate speech')
+      console.error('API request failed:', error)
+      setInfo('Connection failed. Using browser speech synthesis.')
+      fallbackSpeechSynthesis(text)
     }
+  }
+
+  const fallbackSpeechSynthesis = (speechText: string) => {
+    if (!('speechSynthesis' in window)) {
+      setError('Speech synthesis not supported in this browser')
+      setSpeaking(false)
+      return
+    }
+
+    speechSynthesis.cancel()
+
+    const utterance = new SpeechSynthesisUtterance(speechText)
+    utterance.rate = 0.8
+    utterance.pitch = 1
+    utterance.volume = 1
+
+    startMouthAnimation()
+
+    utterance.onend = () => {
+      stopMouthAnimation()
+      setSpeaking(false)
+    }
+
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event)
+      stopMouthAnimation()
+      setSpeaking(false)
+      setError('Speech synthesis failed: ' + event.error)
+    }
+
+    utterance.onstart = () => {
+      setInfo('Using browser speech synthesis')
+    }
+
+    speechSynthesis.speak(utterance)
+  }
+
+  const startMouthAnimation = () => {
+    mouthControls.start({
+      scaleY: [1, 0.3, 1],
+      transition: {
+        duration: 0.2,
+        repeat: Infinity,
+        repeatType: 'reverse',
+      },
+    })
+  }
+
+  const stopMouthAnimation = () => {
+    mouthControls.stop()
+    mouthControls.set({ scaleY: 1 })
   }
 
   const stopSpeaking = () => {
@@ -46,8 +108,12 @@ export default function TalkingAvatar() {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
-    mouthControls.stop()
-    mouthControls.set({ scaleY: 1 })
+    
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel()
+    }
+    
+    stopMouthAnimation()
     setSpeaking(false)
   }
 
@@ -57,14 +123,31 @@ export default function TalkingAvatar() {
       audioRef.current = audio
       
       audio.onended = () => {
-        mouthControls.stop()
-        mouthControls.set({ scaleY: 1 })
+        stopMouthAnimation()
         setSpeaking(false)
       }
       
-      audio.play()
+      audio.onerror = () => {
+        console.error('Audio playback error')
+        stopMouthAnimation()
+        setSpeaking(false)
+        setError('Failed to play audio')
+      }
+      
+      audio.play().catch(error => {
+        console.error('Audio play failed:', error)
+        setError('Failed to play audio: ' + error.message)
+        setSpeaking(false)
+      })
     }
-  }, [audioUrl, mouthControls])
+  }, [audioUrl])
+
+  const quickExamples = [
+    "Hello! Welcome to AI Animation Studio!",
+    "This is a demonstration of text to speech technology.",
+    "Create amazing animations with artificial intelligence.",
+    "The future of content creation is here."
+  ]
 
   return (
     <div className="space-y-6">
@@ -86,6 +169,19 @@ export default function TalkingAvatar() {
           className="w-full h-24 p-4 bg-black/30 border border-white/20 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
         />
         
+        {/* Quick Examples */}
+        <div className="grid grid-cols-2 gap-2">
+          {quickExamples.map((example, index) => (
+            <button
+              key={index}
+              onClick={() => setText(example)}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-left transition-colors"
+            >
+              <span className="text-white text-sm">{example.substring(0, 30)}...</span>
+            </button>
+          ))}
+        </div>
+
         <div className="flex gap-3">
           <button
             onClick={speak}
@@ -111,6 +207,22 @@ export default function TalkingAvatar() {
             </button>
           )}
         </div>
+
+        {/* Information Message */}
+        {info && (
+          <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-3">
+            <p className="text-blue-200 text-sm">{info}</p>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-900/30 border border-red-700 rounded-xl p-3">
+            <p className="text-red-200 text-sm">
+              <strong>Note:</strong> {error}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Avatar Display */}
@@ -146,6 +258,22 @@ export default function TalkingAvatar() {
             <source src={audioUrl} type="audio/mpeg" />
             Your browser does not support the audio element.
           </audio>
+        </div>
+      )}
+
+      {/* Setup Instructions */}
+      {!process.env.OPENAI_API_KEY && (
+        <div className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4">
+          <h4 className="text-yellow-200 font-semibold mb-2">Setup Required</h4>
+          <p className="text-yellow-200 text-sm mb-2">
+            To enable AI-generated speech, add your OpenAI API key to <code className="bg-black/50 px-1 rounded">.env.local</code>:
+          </p>
+          <code className="block bg-black/50 p-2 rounded text-yellow-100 text-xs mb-2">
+            OPENAI_API_KEY=sk-your-key-here
+          </code>
+          <p className="text-yellow-200 text-sm">
+            Currently using browser speech synthesis. The avatar will still talk, but with system voices.
+          </p>
         </div>
       )}
     </div>

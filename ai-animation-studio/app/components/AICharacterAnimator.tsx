@@ -1,559 +1,1062 @@
-'use client'
-import { useState, useRef } from 'react'
-import { motion, useAnimation } from 'framer-motion'
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-interface Character {
-  name: string
-  description: string
-  physicalFeatures: {
-    height: string
-    weight: string
-    bodyType: string
-    hair: string
-    eyes: string
-    skin: string
-    distinctiveFeatures: string[]
-  }
-  personality: {
-    traits: string[]
-    style: string
-    posture: string
-  }
-  animationStyle: string
+interface SceneData {
+  concept?: {
+    title: string;
+    description: string;
+    keyframes: string[];
+    duration: number;
+    easing: string;
+  };
+  character?: {
+    name: string;
+    description: string;
+    physicalFeatures: {
+      height: string;
+      weight: string;
+      bodyType: string;
+      hair: string;
+      eyes: string;
+      skin: string;
+      distinctiveFeatures: string[];
+    };
+    personality: {
+      traits: string[];
+      style: string;
+      posture: string;
+    };
+    animationStyle: string;
+  };
+  animationType?: string;
+  config?: {
+    color: string;
+    motion: string;
+    intensity: number;
+  };
+  scene?: {
+    description: string;
+    characters: any[];
+    environment: string;
+    mood: string;
+    actions: string[];
+  };
+  error?: string;
 }
 
-type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'dance' | 'attack' | 'castSpell' | 'greet'
+interface AICharacterAnimatorProps {}
 
-export default function AICharacterAnimator() {
-  const [prompt, setPrompt] = useState('')
-  const [character, setCharacter] = useState<Character | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [animationType, setAnimationType] = useState<AnimationType>('idle')
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null)
-  const controls = useAnimation()
+const AICharacterAnimator: React.FC<AICharacterAnimatorProps> = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [sceneData, setSceneData] = useState<SceneData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [currentKeyframe, setCurrentKeyframe] = useState(0);
+  const [userPrompt, setUserPrompt] = useState('');
+  const [selectedType, setSelectedType] = useState<'character' | 'scene' | 'animation' | 'particles'>('character');
+  const [generatedCharacters, setGeneratedCharacters] = useState<any[]>([]);
+  const [characterActions, setCharacterActions] = useState<{[key: number]: string}>({});
 
-  const generateCharacter = async () => {
-    if (!prompt.trim()) return
-    setLoading(true)
-    
+  const generateContent = async () => {
+    if (!userPrompt.trim()) {
+      setError('Please enter a prompt');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSceneData(null);
+
     try {
-      const response = await fetch('/api/character', {
+      let apiType = 'character-description';
+      let prompt = userPrompt;
+
+      // Map UI types to API types
+      switch (selectedType) {
+        case 'character':
+          apiType = 'character-description';
+          prompt = `Create a character: ${userPrompt}`;
+          break;
+        case 'scene':
+          apiType = 'character-animation';
+          prompt = `Create a scene with characters: ${userPrompt}`;
+          break;
+        case 'animation':
+          apiType = 'animation';
+          prompt = `Create an animation: ${userPrompt}`;
+          break;
+        case 'particles':
+          apiType = 'particles';
+          prompt = `Create particle effects: ${userPrompt}`;
+          break;
+      }
+
+      const response = await fetch('/api/ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt,
-          type: 'character-description' 
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          type: apiType,
         }),
-      })
-      
+      });
+
       if (!response.ok) {
-        throw new Error('API request failed')
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const data = await response.json();
       
-      const data = await response.json()
-      console.log('Character API Response:', data)
-      
+      console.log('API Response:', data);
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (!data.character && !data.concept && !data.animationType && !data.config && !data.scene) {
+        throw new Error('No valid data received from API');
+      }
+
+      setSceneData(data);
+
       if (data.character) {
-        setCharacter(data.character)
-        // Generate a visual representation based on the character
-        generateCharacterVisual(data.character)
-        setAnimationType('idle')
-        await controls.start(getAnimationVariant('idle'))
-      } else {
-        throw new Error('No character data in response')
+        setGeneratedCharacters(prev => [...prev, data.character]);
+        // Set default action for new character
+        setCharacterActions(prev => ({
+          ...prev,
+          [generatedCharacters.length]: 'idle'
+        }));
       }
-    } catch (error) {
-      console.error('Error generating character:', error)
-      // Create a fallback character based on the prompt
-      const fallbackCharacter = createFallbackCharacter(prompt)
-      setCharacter(fallbackCharacter)
-      generateCharacterVisual(fallbackCharacter)
+
+      if (data.concept?.keyframes) {
+        animateKeyframes(data.concept.keyframes, data.concept.duration);
+      }
+
+    } catch (err) {
+      console.error('Error generating content:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate content');
     } finally {
-      setLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const generateCharacterVisual = (char: Character) => {
-    // Create a simple visual representation based on character features
-    // In a real app, you'd call an image generation API here
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    canvas.width = 200
-    canvas.height = 300
-    
-    // Background
-    ctx.fillStyle = '#1e293b'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    
-    // Character body based on body type
-    const bodyType = char.physicalFeatures.bodyType.toLowerCase()
-    let bodyWidth = 60
-    let bodyHeight = 120
-    
-    if (bodyType.includes('slim') || bodyType.includes('thin')) {
-      bodyWidth = 50
-      bodyHeight = 130
-    } else if (bodyType.includes('muscular') || bodyType.includes('athletic')) {
-      bodyWidth = 70
-      bodyHeight = 130
-    } else if (bodyType.includes('large') || bodyType.includes('heavy')) {
-      bodyWidth = 80
-      bodyHeight = 110
-    }
-    
-    // Body color based on skin tone
-    let skinColor = '#f0d9b5' // default
-    if (char.physicalFeatures.skin.includes('pale') || char.physicalFeatures.skin.includes('light')) {
-      skinColor = '#f8e0b0'
-    } else if (char.physicalFeatures.skin.includes('tan') || char.physicalFeatures.skin.includes('olive')) {
-      skinColor = '#e0b88a'
-    } else if (char.physicalFeatures.skin.includes('dark') || char.physicalFeatures.skin.includes('brown')) {
-      skinColor = '#b08c6c'
-    } else if (char.physicalFeatures.skin.includes('ebony') || char.physicalFeatures.skin.includes('black')) {
-      skinColor = '#8c6c4a'
-    }
-    
-    // Draw character
-    ctx.fillStyle = skinColor
-    ctx.fillRect((canvas.width - bodyWidth) / 2, 100, bodyWidth, bodyHeight)
-    
-    // Head
-    ctx.beginPath()
-    ctx.arc(canvas.width / 2, 70, 25, 0, Math.PI * 2)
-    ctx.fill()
-    
-    // Hair color
-    let hairColor = '#8b4513' // default brown
-    if (char.physicalFeatures.hair.includes('blonde') || char.physicalFeatures.hair.includes('golden')) {
-      hairColor = '#d4b483'
-    } else if (char.physicalFeatures.hair.includes('black')) {
-      hairColor = '#2c2c2c'
-    } else if (char.physicalFeatures.hair.includes('red') || char.physicalFeatures.hair.includes('auburn')) {
-      hairColor = '#a52a2a'
-    } else if (char.physicalFeatures.hair.includes('gray') || char.physicalFeatures.hair.includes('white')) {
-      hairColor = '#d3d3d3'
-    } else if (char.physicalFeatures.hair.includes('blue') || char.physicalFeatures.hair.includes('green') || char.physicalFeatures.hair.includes('pink')) {
-      hairColor = '#ff6b9d' // fantasy colors
-    }
-    
-    // Hair style
-    ctx.fillStyle = hairColor
-    if (char.physicalFeatures.hair.includes('long')) {
-      ctx.fillRect((canvas.width - 40) / 2, 45, 40, 40)
-    } else if (char.physicalFeatures.hair.includes('short')) {
-      ctx.fillRect((canvas.width - 30) / 2, 45, 30, 20)
-    } else {
-      // Medium/default
-      ctx.fillRect((canvas.width - 35) / 2, 45, 35, 30)
-    }
-    
-    // Eyes
-    ctx.fillStyle = '#000'
-    ctx.beginPath()
-    ctx.arc(canvas.width / 2 - 8, 65, 4, 0, Math.PI * 2)
-    ctx.arc(canvas.width / 2 + 8, 65, 4, 0, Math.PI * 2)
-    ctx.fill()
-    
-    // Clothing based on style
-    ctx.fillStyle = char.personality.style.includes('elegant') ? '#9370db' : 
-                   char.personality.style.includes('casual') ? '#4682b4' :
-                   char.personality.style.includes('armor') ? '#708090' :
-                   char.personality.style.includes('fantasy') ? '#da70d6' : '#32cd32'
-    
-    ctx.fillRect((canvas.width - bodyWidth + 10) / 2, 120, bodyWidth - 20, 80)
-    
-    setGeneratedImage(canvas.toDataURL())
-  }
-
-  const createFallbackCharacter = (userPrompt: string): Character => {
-    const promptLower = userPrompt.toLowerCase()
-    
-    // Determine character type based on prompt keywords
-    let characterTemplate = {
-      name: 'Unknown Character',
-      description: `A character based on: ${userPrompt}`,
-      physicalFeatures: {
-        height: 'Average',
-        weight: 'Medium',
-        bodyType: 'Average',
-        hair: 'Brown medium length',
-        eyes: 'Brown',
-        skin: 'Light',
-        distinctiveFeatures: ['None specified']
-      },
-      personality: {
-        traits: ['Adaptable'],
-        style: 'Casual',
-        posture: 'Neutral'
-      },
-      animationStyle: 'neutral'
+  const generateSceneWithCharacters = async () => {
+    if (generatedCharacters.length === 0) {
+      setError('Please generate at least one character first');
+      return;
     }
 
-    if (promptLower.includes('warrior') || promptLower.includes('fighter') || promptLower.includes('knight')) {
-      characterTemplate = {
-        name: 'Brave Warrior',
-        description: 'A strong and courageous fighter ready for battle',
-        physicalFeatures: {
-          height: 'Tall',
-          weight: 'Heavy',
-          bodyType: 'Muscular',
-          hair: 'Short brown',
-          eyes: 'Determined brown',
-          skin: 'Tanned',
-          distinctiveFeatures: ['Scar on cheek', 'Broad shoulders', 'Battle-ready stance']
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        personality: {
-          traits: ['Brave', 'Strong', 'Loyal', 'Protective'],
-          style: 'Armor and weapons',
-          posture: 'Confident and ready'
-        },
-        animationStyle: 'powerful'
+        body: JSON.stringify({
+          prompt: `Create a dynamic scene with these characters: ${generatedCharacters.map(c => c.name).join(', ')}. Scene description: ${userPrompt || 'characters interacting in a fantasy world'}. Include actions like running, jumping, fighting, casting spells, etc.`,
+          type: 'character-animation',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    } else if (promptLower.includes('wizard') || promptLower.includes('mage') || promptLower.includes('sorcerer')) {
-      characterTemplate = {
-        name: 'Ancient Wizard',
-        description: 'A wise magic user with arcane knowledge',
-        physicalFeatures: {
-          height: 'Tall',
-          weight: 'Slender',
-          bodyType: 'Thin',
-          hair: 'Long white beard',
-          eyes: 'Piercing blue',
-          skin: 'Pale',
-          distinctiveFeatures: ['Staff', 'Robe', 'Wise expression', 'Long fingers']
-        },
-        personality: {
-          traits: ['Wise', 'Patient', 'Knowledgeable', 'Mysterious'],
-          style: 'Robes and arcane symbols',
-          posture: 'Thoughtful and deliberate'
-        },
-        animationStyle: 'magical'
-      }
-    } else if (promptLower.includes('elf') || promptLower.includes('fairy') || prompt.includes('magical')) {
-      characterTemplate = {
-        name: 'Ethereal Elf',
-        description: 'A graceful magical being from ancient forests',
-        physicalFeatures: {
-          height: 'Tall and slender',
-          weight: 'Light',
-          bodyType: 'Slim',
-          hair: 'Long silver',
-          eyes: 'Bright green',
-          skin: 'Fair',
-          distinctiveFeatures: ['Pointed ears', 'Graceful movements', 'Nature affinity']
-        },
-        personality: {
-          traits: ['Graceful', 'Wise', 'Nature-loving', 'Mysterious'],
-          style: 'Nature-inspired clothing',
-          posture: 'Elegant and poised'
-        },
-        animationStyle: 'graceful'
-      }
-    } else if (promptLower.includes('robot') || promptLower.includes('cyborg') || promptLower.includes('android')) {
-      characterTemplate = {
-        name: 'Advanced Android',
-        description: 'A sophisticated robotic being with advanced AI',
-        physicalFeatures: {
-          height: 'Average human height',
-          weight: 'Heavy metallic',
-          bodyType: 'Mechanical',
-          hair: 'None',
-          eyes: 'Glowing blue',
-          skin: 'Metallic silver',
-          distinctiveFeatures: ['LED displays', 'Hydraulic joints', 'Sleek design', 'Glowing elements']
-        },
-        personality: {
-          traits: ['Logical', 'Efficient', 'Curious', 'Precise'],
-          style: 'Futuristic and sleek',
-          posture: 'Mechanical and precise'
-        },
-        animationStyle: 'robotic'
-      }
+
+      const data = await response.json();
+      setSceneData(data);
+
+      // Assign random actions to characters based on scene
+      const actions = ['idle', 'walk', 'run', 'jump', 'attack', 'castSpell', 'dance', 'greet'];
+      const newActions: {[key: number]: string} = {};
+      generatedCharacters.forEach((_, index) => {
+        newActions[index] = actions[Math.floor(Math.random() * actions.length)];
+      });
+      setCharacterActions(newActions);
+
+    } catch (err) {
+      console.error('Error generating scene:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate scene');
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    return characterTemplate
-  }
+  const setCharacterAction = (characterIndex: number, action: string) => {
+    setCharacterActions(prev => ({
+      ...prev,
+      [characterIndex]: action
+    }));
+  };
 
-  const getAnimationVariant = (type: AnimationType) => {
-    switch (type) {
-      case 'idle':
-        return {
-          y: [0, -5, 0],
-          transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-        }
-      case 'walk':
-        return {
-          x: [0, 20, 0],
-          y: [0, -2, 0],
-          transition: { duration: 1, repeat: Infinity, ease: 'easeInOut' }
-        }
+  const animateKeyframes = (keyframes: string[], duration: number) => {
+    const interval = (duration * 1000) / keyframes.length;
+    let frameIndex = 0;
+    
+    const intervalId = setInterval(() => {
+      frameIndex = (frameIndex + 1) % keyframes.length;
+      setCurrentKeyframe(frameIndex);
+    }, interval);
+
+    return () => clearInterval(intervalId);
+  };
+
+  const getCharacterAnimation = (characterIndex: number) => {
+    const action = characterActions[characterIndex] || 'idle';
+    
+    switch (action) {
       case 'run':
         return {
-          x: [0, 30, 0],
-          y: [0, -10, 0],
-          transition: { duration: 0.6, repeat: Infinity, ease: 'easeInOut' }
-        }
+          x: [0, 100, 0],
+          y: [0, -5, 0],
+          rotate: [0, 5, 0, -5, 0],
+          transition: {
+            duration: 0.8,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
+      case 'walk':
+        return {
+          x: [0, 50, 0],
+          y: [0, -2, 0],
+          transition: {
+            duration: 1.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
       case 'jump':
         return {
-          y: [0, -50, 0],
+          y: [0, -60, 0],
           scale: [1, 1.1, 1],
-          transition: { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
-        }
-      case 'dance':
-        return {
-          rotate: [0, 10, -10, 0],
-          y: [0, -10, 0],
-          transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }
-        }
+          transition: {
+            duration: 1,
+            repeat: Infinity,
+            ease: "easeOut"
+          }
+        };
       case 'attack':
         return {
-          x: [0, 15, 0],
+          x: [0, 20, 0],
+          y: [0, -10, 0],
+          rotate: [0, -15, 15, 0],
           scale: [1, 1.2, 1],
-          transition: { duration: 0.7, repeat: Infinity, ease: 'easeInOut' }
-        }
+          transition: {
+            duration: 0.6,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
       case 'castSpell':
         return {
-          scale: [1, 1.3, 1],
-          opacity: [1, 0.8, 1],
-          transition: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
-        }
+          y: [0, -10, 0],
+          scale: [1, 1.1, 1],
+          rotate: [0, 5, -5, 0],
+          transition: {
+            duration: 1.2,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
+      case 'dance':
+        return {
+          y: [0, -20, 0],
+          rotate: [0, 10, -10, 10, 0],
+          scale: [1, 1.05, 1],
+          transition: {
+            duration: 1,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
       case 'greet':
         return {
           y: [0, -10, 0],
-          rotate: [0, 5, -5, 0],
-          transition: { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
-        }
+          scale: [1, 1.05, 1],
+          transition: {
+            duration: 1.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
+      default: // idle
+        return {
+          y: [0, -5, 0],
+          scale: [1, 1.02, 1],
+          transition: {
+            duration: 2,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }
+        };
+    }
+  };
+
+  const renderCharacter = (character: any, index: number, inScene: boolean = false) => {
+    const action = characterActions[index] || 'idle';
+    
+    return (
+      <motion.div
+        key={index}
+        className="character"
+        initial={{ scale: 0.8, opacity: 0, y: 20 }}
+        animate={inScene ? getCharacterAnimation(index) : { scale: 1, opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: index * 0.1 }}
+        style={{
+          width: inScene ? '70px' : '80px',
+          height: inScene ? '100px' : '120px',
+          background: getCharacterColor(character.animationStyle),
+          borderRadius: '10px',
+          position: 'relative',
+          margin: '10px',
+          cursor: inScene ? 'pointer' : 'default',
+          border: inScene ? `3px solid ${getActionColor(action)}` : 'none',
+          boxShadow: inScene ? `0 0 10px ${getActionColor(action)}` : 'none',
+        }}
+        whileHover={{ scale: inScene ? 1.1 : 1.05 }}
+        whileTap={{ scale: inScene ? 0.95 : 0.95 }}
+        onClick={inScene ? () => cycleCharacterAction(index) : undefined}
+      >
+        <div className="character-features">
+          <div 
+            className="character-head"
+            style={{
+              width: inScene ? '25px' : '30px',
+              height: inScene ? '25px' : '30px',
+              background: getSkinColor(character.physicalFeatures.skin),
+              borderRadius: '50%',
+              margin: inScene ? '3px auto' : '5px auto',
+              border: '2px solid #333'
+            }}
+          />
+          <div 
+            className="character-body"
+            style={{
+              width: inScene ? '40px' : '50px',
+              height: inScene ? '30px' : '40px',
+              background: getCharacterOutfit(character.personality.style),
+              borderRadius: '5px',
+              margin: '0 auto',
+              position: 'relative'
+            }}
+          />
+          {inScene && (
+            <div 
+              className="action-effect"
+              style={{
+                position: 'absolute',
+                top: '-10px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: '20px',
+                filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.8))'
+              }}
+            >
+              {getActionEmoji(action)}
+            </div>
+          )}
+          <div 
+            className="character-name"
+            style={{
+              position: 'absolute',
+              bottom: '5px',
+              left: '0',
+              right: '0',
+              textAlign: 'center',
+              fontSize: inScene ? '9px' : '10px',
+              color: 'white',
+              fontWeight: 'bold',
+              textShadow: '1px 1px 1px rgba(0,0,0,0.5)'
+            }}
+          >
+            {character.name.split(' ')[0]}
+          </div>
+          {inScene && (
+            <div 
+              className="character-action"
+              style={{
+                position: 'absolute',
+                top: '-25px',
+                left: '0',
+                right: '0',
+                textAlign: 'center',
+                fontSize: '10px',
+                color: getActionColor(action),
+                fontWeight: 'bold',
+                textShadow: '1px 1px 1px rgba(0,0,0,0.8)'
+              }}
+            >
+              {action}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
+
+  const cycleCharacterAction = (characterIndex: number) => {
+    const actions = ['idle', 'walk', 'run', 'jump', 'attack', 'castSpell', 'dance', 'greet'];
+    const currentAction = characterActions[characterIndex] || 'idle';
+    const currentIndex = actions.indexOf(currentAction);
+    const nextAction = actions[(currentIndex + 1) % actions.length];
+    setCharacterAction(characterIndex, nextAction);
+  };
+
+  const getActionEmoji = (action: string) => {
+    const emojis: {[key: string]: string} = {
+      'run': '🏃',
+      'walk': '🚶',
+      'jump': '🦘',
+      'attack': '⚔️',
+      'castSpell': '✨',
+      'dance': '💃',
+      'greet': '👋',
+      'idle': '💤'
+    };
+    return emojis[action] || '💤';
+  };
+
+  const getActionColor = (action: string) => {
+    const colors: {[key: string]: string} = {
+      'run': '#e74c3c',
+      'walk': '#3498db',
+      'jump': '#f39c12',
+      'attack': '#c0392b',
+      'castSpell': '#9b59b6',
+      'dance': '#e84393',
+      'greet': '#27ae60',
+      'idle': '#95a5a6'
+    };
+    return colors[action] || '#95a5a6';
+  };
+
+  const getSkinColor = (skin: string) => {
+    const colors: { [key: string]: string } = {
+      'Tanned': '#d2b48c',
+      'Pale': '#f0d9b5',
+      'Fair': '#ffdbac',
+      'Light': '#ffdbac',
+      'Olive': '#b5a642',
+      'Dark': '#8d5524'
+    };
+    return colors[skin] || '#f0d9b5';
+  };
+
+  const getCharacterColor = (style: string) => {
+    const colors: { [key: string]: string } = {
+      powerful: '#e74c3c',
+      magical: '#9b59b6',
+      graceful: '#3498db',
+      neutral: '#95a5a6',
+      brave: '#e67e22',
+      wise: '#2ecc71',
+      mysterious: '#34495e'
+    };
+    return colors[style] || '#95a5a6';
+  };
+
+  const getCharacterOutfit = (style: string) => {
+    const outfits: { [key: string]: string } = {
+      'Armor and weapons': '#7f8c8d',
+      'Robes and arcane symbols': '#8e44ad',
+      'Nature-inspired clothing': '#27ae60',
+      'Casual': '#bdc3c7',
+      'Battle gear': '#c0392b',
+      'Elegant robes': '#16a085'
+    };
+    return outfits[style] || '#bdc3c7';
+  };
+
+  const renderParticles = () => {
+    if (!sceneData?.config) return null;
+
+    const { config } = sceneData;
+    const particleCount = config.intensity * 10;
+
+    return (
+      <div className="particles-container">
+        {Array.from({ length: particleCount }).map((_, i) => (
+          <motion.div
+            key={i}
+            className="particle"
+            style={{
+              width: '6px',
+              height: '6px',
+              background: config.color,
+              borderRadius: '50%',
+              position: 'absolute',
+              filter: 'blur(1px)'
+            }}
+            animate={{
+              x: getParticleMotion(config.motion, 'x', i),
+              y: getParticleMotion(config.motion, 'y', i),
+              scale: [0, 1, 0],
+              opacity: [0, 1, 0],
+              rotate: [0, 180, 360]
+            }}
+            transition={{
+              duration: 3 + (i % 4),
+              repeat: Infinity,
+              delay: i * 0.2,
+              ease: "easeInOut",
+            }}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const getParticleMotion = (motionType: string, axis: 'x' | 'y', index: number) => {
+    const base = index % 10;
+    
+    switch (motionType) {
+      case 'rise':
+        return axis === 'y' ? [0, -200, -200] : [base * 40 - 200, base * 40 - 200 + Math.sin(base) * 50];
+      case 'float':
+        return axis === 'y' ? [0, -100, 0] : [base * 30 - 150, base * 35 - 150, base * 30 - 150];
+      case 'orbit':
+        return axis === 'x' ? [0, 50, 0, -50, 0] : [0, 30, 50, 30, 0];
+      case 'vortex':
+        return axis === 'x' ? [0, 60, 0, -60, 0] : [0, 0, 60, 0, 0];
+      case 'explode':
+        return axis === 'x' ? [0, Math.cos(base) * 100] : [0, Math.sin(base) * 100];
       default:
-        return {}
+        return axis === 'y' ? [0, -80, 0] : [0, 0, 0];
     }
-  }
+  };
 
-  const handleAnimationChange = async (type: AnimationType) => {
-    setAnimationType(type)
-    await controls.start(getAnimationVariant(type))
-  }
+  const clearCharacters = () => {
+    setGeneratedCharacters([]);
+    setCharacterActions({});
+  };
 
-  const quickCharacterExamples = [
-    {
-      name: 'Medieval Knight',
-      prompt: 'A tall muscular knight in full plate armor with a broad sword, scar on face, brown hair and beard, battle-worn but honorable'
-    },
-    {
-      name: 'Forest Elf',
-      prompt: 'A graceful elf with pointed ears, long silver hair, green eyes, slender build, wearing nature-inspired clothing, mystical and agile'
-    },
-    {
-      name: 'Future Android',
-      prompt: 'A sleek humanoid robot with metallic silver body, glowing blue eyes, advanced hydraulics, logical personality, futuristic design'
-    },
-    {
-      name: 'Ancient Wizard',
-      prompt: 'An old wise wizard with long white beard, blue eyes, tall thin frame, wearing robes with arcane symbols, staff in hand'
-    }
-  ]
+  const setAllCharactersAction = (action: string) => {
+    const newActions: {[key: number]: string} = {};
+    generatedCharacters.forEach((_, index) => {
+      newActions[index] = action;
+    });
+    setCharacterActions(newActions);
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
-          <span className="text-lg">👤</span>
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-white">AI Character Creator</h2>
-          <p className="text-gray-400">Describe any character and see them come to life with animations</p>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe your character in detail... Example: 'A tall muscular warrior with scarred face, wearing heavy armor, brown hair and beard, battle-ready stance'"
-          className="w-full h-32 p-4 bg-black/30 border border-white/20 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
-        />
+    <div className="ai-character-animator">
+      <div className="controls-panel">
+        <h1>AI Character & Scene Generator</h1>
         
-        <button
-          onClick={generateCharacter}
-          disabled={loading || !prompt.trim()}
-          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-2xl transition-all duration-200"
-        >
-          {loading ? (
-            <div className="flex items-center justify-center gap-2">
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Creating Character...
-            </div>
-          ) : (
-            'Generate Character'
-          )}
-        </button>
-      </div>
-
-      {/* Quick Character Examples */}
-      <div className="bg-black/30 rounded-2xl p-4 border border-white/10">
-        <h4 className="text-lg font-semibold text-white mb-3">Quick Examples - Click to Try</h4>
-        <div className="grid grid-cols-2 gap-2">
-          {quickCharacterExamples.map((example, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                setPrompt(example.prompt)
-                setTimeout(() => generateCharacter(), 100)
-              }}
-              className="p-3 bg-white/10 hover:bg-white/20 rounded-lg text-left transition-colors group"
+        <div className="input-section">
+          <div className="search-bar">
+            <input
+              type="text"
+              value={userPrompt}
+              onChange={(e) => setUserPrompt(e.target.value)}
+              placeholder="Describe a character, scene, or animation..."
+              className="prompt-input"
+              onKeyPress={(e) => e.key === 'Enter' && generateContent()}
+            />
+            <button 
+              onClick={generateContent}
+              disabled={isLoading}
+              className="generate-button"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-white font-semibold text-sm group-hover:text-green-300 transition-colors">
-                  {example.name}
-                </span>
-              </div>
-              <span className="text-gray-400 text-xs">{example.prompt.substring(0, 50)}...</span>
+              {isLoading ? 'Creating...' : 'Generate'}
             </button>
-          ))}
+          </div>
+
+          <div className="type-selector">
+            <label>Generate:</label>
+            <select 
+              value={selectedType} 
+              onChange={(e) => setSelectedType(e.target.value as any)}
+              className="type-select"
+            >
+              <option value="character">Character</option>
+              <option value="scene">Scene</option>
+              <option value="animation">Animation</option>
+              <option value="particles">Particles</option>
+            </select>
+          </div>
+
+          {generatedCharacters.length > 0 && (
+            <div className="scene-controls">
+              <button 
+                onClick={generateSceneWithCharacters}
+                disabled={isLoading}
+                className="scene-button"
+              >
+                Create Scene with Characters
+              </button>
+              <button 
+                onClick={clearCharacters}
+                className="clear-button"
+              >
+                Clear Characters ({generatedCharacters.length})
+              </button>
+            </div>
+          )}
         </div>
+
+        {error && (
+          <div className="error-message">
+            ⚠️ {error}
+          </div>
+        )}
       </div>
 
-      {/* Character Display */}
-      {character && (
-        <div className="space-y-6">
-          <div className="bg-black/30 rounded-2xl p-6 border border-white/10">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Character Visual */}
-              <div className="lg:col-span-1">
-                <div className="flex flex-col items-center">
-                  <motion.div
-                    animate={controls}
-                    className="w-48 h-64 rounded-2xl border-4 border-green-500/30 bg-gradient-to-br from-green-900/20 to-emerald-900/20 flex items-center justify-center relative overflow-hidden"
-                  >
-                    {generatedImage ? (
-                      <img 
-                        src={generatedImage} 
-                        alt="Generated character" 
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-center text-gray-400">
-                        <span className="text-4xl">👤</span>
-                        <p className="text-sm mt-2">Character Visual</p>
-                      </div>
-                    )}
-                  </motion.div>
-                  
-                  {/* Animation Controls */}
-                  <div className="mt-4 w-full">
-                    <h4 className="text-white font-semibold mb-2 text-center">Animations</h4>
-                    <div className="grid grid-cols-4 gap-1">
-                      {(['idle', 'walk', 'run', 'jump', 'dance', 'attack', 'castSpell', 'greet'] as AnimationType[]).map((type) => (
-                        <button
-                          key={type}
-                          onClick={() => handleAnimationChange(type)}
-                          className={`p-2 rounded text-xs font-semibold transition-colors ${
-                            animationType === type 
-                              ? 'bg-green-600 text-white' 
-                              : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                          }`}
-                        >
-                          {type}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Character Details */}
-              <div className="lg:col-span-2 space-y-4">
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-2">{character.name}</h3>
-                  <p className="text-gray-300">{character.description}</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Physical Features */}
-                  <div className="bg-black/50 rounded-lg p-4">
-                    <h4 className="text-lg font-semibold text-white mb-3">Physical Features</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Height:</span>
-                        <span className="text-white">{character.physicalFeatures.height}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Weight:</span>
-                        <span className="text-white">{character.physicalFeatures.weight}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Body Type:</span>
-                        <span className="text-white">{character.physicalFeatures.bodyType}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Hair:</span>
-                        <span className="text-white">{character.physicalFeatures.hair}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Eyes:</span>
-                        <span className="text-white">{character.physicalFeatures.eyes}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Skin:</span>
-                        <span className="text-white">{character.physicalFeatures.skin}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Personality */}
-                  <div className="bg-black/50 rounded-lg p-4">
-                    <h4 className="text-lg font-semibold text-white mb-3">Personality & Style</h4>
-                    <div className="space-y-3">
-                      <div>
-                        <span className="text-gray-400 text-sm">Traits:</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {character.personality.traits.map((trait, index) => (
-                            <span key={index} className="bg-green-500/20 text-green-300 px-2 py-1 rounded text-xs">
-                              {trait}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 text-sm">Style:</span>
-                        <p className="text-white text-sm mt-1">{character.personality.style}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 text-sm">Posture:</span>
-                        <p className="text-white text-sm mt-1">{character.personality.posture}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Distinctive Features */}
-                {character.physicalFeatures.distinctiveFeatures.length > 0 && (
-                  <div className="bg-black/50 rounded-lg p-4">
-                    <h4 className="text-lg font-semibold text-white mb-3">Distinctive Features</h4>
-                    <ul className="list-disc list-inside text-gray-300 space-y-1">
-                      {character.physicalFeatures.distinctiveFeatures.map((feature, index) => (
-                        <li key={index}>{feature}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </div>
+      {/* Characters Gallery */}
+      {generatedCharacters.length > 0 && (
+        <div className="characters-gallery">
+          <h3>Generated Characters ({generatedCharacters.length})</h3>
+          <div className="characters-grid">
+            {generatedCharacters.map((character, index) => renderCharacter(character, index))}
           </div>
         </div>
       )}
 
-      {/* Tips Section */}
-      <div className="bg-green-900/30 border border-green-700 rounded-xl p-4">
-        <h4 className="text-white font-semibold mb-2">💡 Character Creation Tips</h4>
-        <ul className="text-green-200 text-sm space-y-1">
-          <li>• <strong>Be descriptive:</strong> "tall muscular warrior with scarred face" vs "strong guy"</li>
-          <li>• <strong>Include physical details:</strong> height, weight, hair, eyes, skin, distinctive features</li>
-          <li>• <strong>Add personality:</strong> clothing style, posture, personality traits</li>
-          <li>• <strong>Try archetypes:</strong> warrior, wizard, elf, robot, detective, athlete</li>
-        </ul>
-      </div>
+      {/* Action Controls */}
+      {generatedCharacters.length > 0 && (
+        <div className="action-controls">
+          <h3>Character Actions</h3>
+          <div className="action-buttons">
+            <button onClick={() => setAllCharactersAction('idle')} className="action-button idle">💤 Idle All</button>
+            <button onClick={() => setAllCharactersAction('walk')} className="action-button walk">🚶 Walk All</button>
+            <button onClick={() => setAllCharactersAction('run')} className="action-button run">🏃 Run All</button>
+            <button onClick={() => setAllCharactersAction('jump')} className="action-button jump">🦘 Jump All</button>
+            <button onClick={() => setAllCharactersAction('attack')} className="action-button attack">⚔️ Attack All</button>
+            <button onClick={() => setAllCharactersAction('castSpell')} className="action-button cast">✨ Cast All</button>
+            <button onClick={() => setAllCharactersAction('dance')} className="action-button dance">💃 Dance All</button>
+            <button onClick={() => setAllCharactersAction('greet')} className="action-button greet">👋 Greet All</button>
+          </div>
+          <p className="action-hint">Click on individual characters in the scene to cycle through their actions!</p>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {sceneData && (
+          <motion.div
+            className="scene-container"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5 }}
+          >
+            {/* Character Information */}
+            {sceneData.character && (
+              <div className="character-info">
+                <h3>🎭 {sceneData.character.name}</h3>
+                <p>{sceneData.character.description}</p>
+                <div className="character-details">
+                  <div><strong>Physical:</strong> {sceneData.character.physicalFeatures.height}, {sceneData.character.physicalFeatures.bodyType}, {sceneData.character.physicalFeatures.hair} hair, {sceneData.character.physicalFeatures.eyes} eyes</div>
+                  <div><strong>Personality:</strong> {sceneData.character.personality.traits.join(', ')}</div>
+                  <div><strong>Style:</strong> {sceneData.character.personality.style}</div>
+                  <div><strong>Movement:</strong> {sceneData.character.animationStyle}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Animation Concept */}
+            {sceneData.concept && (
+              <div className="concept-info">
+                <h3>🎬 {sceneData.concept.title}</h3>
+                <p>{sceneData.concept.description}</p>
+                <div className="keyframes">
+                  <strong>Animation Sequence:</strong>
+                  <div className="keyframe-list">
+                    {sceneData.concept.keyframes.map((frame, index) => (
+                      <div 
+                        key={index} 
+                        className={`keyframe-item ${index === currentKeyframe ? 'active' : ''}`}
+                      >
+                        {frame}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Animation Preview Area */}
+            <div className="animation-preview">
+              {renderParticles()}
+              
+              {/* Render multiple characters in scene */}
+              {generatedCharacters.length > 0 && (
+                <div className="characters-in-scene">
+                  {generatedCharacters.map((character, index) => (
+                    <motion.div
+                      key={index}
+                      className="scene-character"
+                    >
+                      {renderCharacter(character, index, true)}
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
+              {sceneData.animationType && (
+                <div className="animation-type-badge">
+                  Animation: {sceneData.animationType}
+                </div>
+              )}
+            </div>
+
+            {/* Debug Information */}
+            <details className="debug-info">
+              <summary>Debug Information</summary>
+              <pre>{JSON.stringify(sceneData, null, 2)}</pre>
+            </details>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <style jsx>{`
+        .ai-character-animator {
+          padding: 20px;
+          max-width: 1200px;
+          margin: 0 auto;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          color: white;
+        }
+
+        .controls-panel {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          padding: 30px;
+          border-radius: 20px;
+          margin-bottom: 30px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .controls-panel h1 {
+          text-align: center;
+          margin-bottom: 30px;
+          font-size: 2.5em;
+          text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .input-section {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+          align-items: center;
+        }
+
+        .search-bar {
+          display: flex;
+          gap: 15px;
+          width: 100%;
+          max-width: 600px;
+        }
+
+        .prompt-input {
+          flex: 1;
+          padding: 15px 20px;
+          border: none;
+          border-radius: 50px;
+          font-size: 16px;
+          background: rgba(0, 0, 0, 0.7) !important;
+          backdrop-filter: blur(10px);
+          box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+          color: white !important;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .prompt-input::placeholder {
+          color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .prompt-input:focus {
+          outline: none;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+          border-color: rgba(255, 255, 255, 0.5);
+          background: rgba(0, 0, 0, 0.8) !important;
+        }
+
+        .generate-button, .scene-button, .clear-button {
+          padding: 15px 30px;
+          border: none;
+          border-radius: 50px;
+          font-size: 16px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+          color: white;
+        }
+
+        .generate-button {
+          background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+          min-width: 150px;
+        }
+
+        .generate-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .generate-button:disabled {
+          background: #95a5a6;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .type-selector {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          font-size: 16px;
+        }
+
+        .type-select {
+          padding: 10px 20px;
+          border-radius: 25px;
+          border: none;
+          background: rgba(0, 0, 0, 0.7) !important;
+          font-size: 16px;
+          color: white !important;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .type-select option {
+          background: #2d3748;
+          color: white;
+          padding: 10px;
+        }
+
+        .scene-controls {
+          display: flex;
+          gap: 15px;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .scene-button {
+          background: linear-gradient(45deg, #3498db, #2980b9);
+        }
+
+        .clear-button {
+          background: linear-gradient(45deg, #e74c3c, #c0392b);
+        }
+
+        .action-controls {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          padding: 20px;
+          border-radius: 15px;
+          margin-bottom: 20px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .action-controls h3 {
+          text-align: center;
+          margin-bottom: 15px;
+        }
+
+        .action-buttons {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          justify-content: center;
+          margin-bottom: 10px;
+        }
+
+        .action-button {
+          padding: 10px 15px;
+          border: none;
+          border-radius: 25px;
+          font-size: 14px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          color: white;
+          border: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .action-button.idle { background: #95a5a6; }
+        .action-button.walk { background: #3498db; }
+        .action-button.run { background: #e74c3c; }
+        .action-button.jump { background: #f39c12; }
+        .action-button.attack { background: #c0392b; }
+        .action-button.cast { background: #9b59b6; }
+        .action-button.dance { background: #e84393; }
+        .action-button.greet { background: #27ae60; }
+
+        .action-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .action-hint {
+          text-align: center;
+          font-size: 14px;
+          opacity: 0.8;
+          margin: 0;
+        }
+
+        .error-message {
+          background: rgba(231, 76, 60, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 10px;
+          text-align: center;
+          margin-top: 15px;
+          backdrop-filter: blur(10px);
+        }
+
+        .characters-gallery {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          padding: 20px;
+          border-radius: 15px;
+          margin-bottom: 20px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .characters-gallery h3 {
+          margin-bottom: 15px;
+          text-align: center;
+        }
+
+        .characters-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 15px;
+          justify-content: center;
+        }
+
+        .scene-container {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          padding: 30px;
+          border-radius: 20px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .character-info, .concept-info {
+          background: rgba(255, 255, 255, 0.15);
+          padding: 20px;
+          border-radius: 15px;
+          margin-bottom: 20px;
+          backdrop-filter: blur(10px);
+        }
+
+        .character-details {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 15px;
+          font-size: 14px;
+        }
+
+        .animation-preview {
+          position: relative;
+          height: 300px;
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 15px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 20px;
+          overflow: hidden;
+          border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .particles-container {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+        }
+
+        .characters-in-scene {
+          display: flex;
+          gap: 30px;
+          align-items: flex-end;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .keyframe-list {
+          margin-top: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        }
+
+        .keyframe-item {
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          transition: all 0.3s ease;
+          color: white;
+        }
+
+        .keyframe-item.active {
+          background: rgba(52, 152, 219, 0.5);
+          transform: scale(1.02);
+          box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+        }
+
+        .animation-type-badge {
+          position: absolute;
+          top: 15px;
+          right: 15px;
+          background: rgba(155, 89, 182, 0.8);
+          padding: 8px 15px;
+          border-radius: 20px;
+          font-size: 14px;
+          font-weight: bold;
+        }
+
+        .debug-info {
+          margin-top: 20px;
+          font-size: 12px;
+        }
+
+        .debug-info summary {
+          cursor: pointer;
+          padding: 10px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 8px;
+          color: white;
+        }
+
+        .debug-info pre {
+          background: rgba(0, 0, 0, 0.3);
+          color: #fff;
+          padding: 15px;
+          border-radius: 8px;
+          overflow-x: auto;
+          margin-top: 10px;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+
+        @media (max-width: 768px) {
+          .search-bar {
+            flex-direction: column;
+          }
+          
+          .scene-controls {
+            flex-direction: column;
+          }
+          
+          .characters-grid {
+            justify-content: center;
+          }
+          
+          .action-buttons {
+            flex-direction: column;
+          }
+        }
+      `}</style>
     </div>
-  )
-}
+  );
+};
+
+export default AICharacterAnimator;

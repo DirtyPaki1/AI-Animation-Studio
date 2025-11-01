@@ -10,7 +10,7 @@ function ParticleSystem({ config, isGenerating }: { config: any, isGenerating: b
   
   // Memoize the geometry creation to prevent recreation on every render
   const { positions, colors, sizes, particleCount } = useMemo(() => {
-    const particleCount = Math.max(50, Math.min(config.intensity * 40, 2000)) // Limit particles to prevent overflow
+    const particleCount = Math.max(50, Math.min(config.intensity * 40, 2000))
     particleCountRef.current = particleCount
     
     const positions = new Float32Array(particleCount * 3)
@@ -235,13 +235,6 @@ export default function ParticlePlayground() {
   const [lastPrompt, setLastPrompt] = useState('')
   const [showPresets, setShowPresets] = useState(true)
 
-  // Generate particles immediately when component mounts or prompt changes
-  useEffect(() => {
-    if (prompt.trim() && prompt !== lastPrompt) {
-      handleGenerateParticles(prompt);
-    }
-  }, []); // Only run once on mount
-
   const handleGenerateParticles = async (userPrompt?: string) => {
     const finalPrompt = userPrompt || prompt;
     if (!finalPrompt.trim()) return
@@ -251,38 +244,29 @@ export default function ParticlePlayground() {
     setShowPresets(false)
     
     try {
-      // First, try AI API with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: finalPrompt,
+          type: 'particles'
+        }),
+      })
       
-      try {
-        const response = await fetch('/api/particles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: finalPrompt }),
-          signal: controller.signal
-        })
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.config) {
-            setConfig(data.config)
-            return
-          }
+      if (response.ok) {
+        const data = await response.json()
+        if (data.config) {
+          setConfig(data.config)
+          return
         }
-      } catch (apiError) {
-        console.log('AI API failed or timed out, using local interpretation')
       }
       
-      // Use enhanced local interpretation as fallback (always works)
+      // Use enhanced local interpretation as fallback
       const localConfig = enhancedInterpretPrompt(finalPrompt)
       setConfig(localConfig)
       
     } catch (error) {
       console.error('Particle generation error:', error)
-      // Ultimate fallback
       const fallbackConfig = enhancedInterpretPrompt(finalPrompt)
       setConfig(fallbackConfig)
     } finally {
@@ -308,7 +292,7 @@ export default function ParticlePlayground() {
     if (prompt.trim() && prompt !== lastPrompt) {
       const timer = setTimeout(() => {
         handleGenerateParticles(prompt);
-      }, 800); // Wait 800ms after user stops typing
+      }, 800);
       
       return () => clearTimeout(timer);
     }
@@ -377,7 +361,7 @@ export default function ParticlePlayground() {
         <div className="h-96 relative">
           <Canvas 
             camera={{ position: [0, 0, 8], fov: 75 }}
-            gl={{ antialias: false }} // Better performance
+            gl={{ antialias: false }}
           >
             <color attach="background" args={['#0f172a']} />
             <OrbitControls enableZoom={true} enablePan={true} />
@@ -437,11 +421,6 @@ export default function ParticlePlayground() {
           <li>• <strong>Motion words:</strong> swirling, floating, exploding, pulsing</li>
           <li>• <strong>It works instantly!</strong> No need to click generate</li>
         </ul>
-      </div>
-
-      {/* Debug Info */}
-      <div className="bg-gray-800 rounded-lg p-3 text-xs text-gray-400">
-        <p>Current: {config.motion} motion, {config.color} color, {config.intensity} intensity</p>
       </div>
     </div>
   )

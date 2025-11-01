@@ -102,7 +102,7 @@ export default function TextToAnimation() {
   const [concept, setConcept] = useState<AnimationConcept | null>(null)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(false)
-  const [animationKey, setAnimationKey] = useState(0) // Force re-render animation
+  const [animationKey, setAnimationKey] = useState(0)
 
   const generateAnimation = async () => {
     if (!prompt.trim()) return
@@ -113,7 +113,10 @@ export default function TextToAnimation() {
       const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, type: 'animation' }),
+        body: JSON.stringify({ 
+          prompt, 
+          type: 'animation' 
+        }),
       })
       
       if (!response.ok) {
@@ -121,19 +124,17 @@ export default function TextToAnimation() {
       }
       
       const data = await response.json()
-      console.log('API Response:', data) // Debug log
+      console.log('API Response:', data)
       
       if (data.concept) {
-        // Validate and fix the concept
         const validatedConcept = validateAnimationConcept(data.concept, prompt)
         setConcept(validatedConcept)
-        setAnimationKey(prev => prev + 1) // Force animation re-render
+        setAnimationKey(prev => prev + 1)
       } else {
         throw new Error('No concept in response')
       }
     } catch (error) {
       console.error('Error generating animation:', error)
-      // Use a fallback concept based on the prompt
       const fallbackConcept = createFallbackConcept(prompt)
       setConcept(fallbackConcept)
       setAnimationKey(prev => prev + 1)
@@ -143,7 +144,6 @@ export default function TextToAnimation() {
   }
 
   const validateAnimationConcept = (concept: any, prompt: string): AnimationConcept => {
-    // Ensure all required fields exist with proper fallbacks
     return {
       title: concept.title || `Animation: ${prompt.substring(0, 30)}...`,
       description: concept.description || `An animation based on: ${prompt}`,
@@ -151,14 +151,13 @@ export default function TextToAnimation() {
         ? concept.keyframes 
         : ['Start position', 'Middle action', 'End position'],
       duration: typeof concept.duration === 'number' 
-        ? Math.max(0.5, Math.min(concept.duration, 10)) // Clamp between 0.5-10 seconds
+        ? Math.max(0.5, Math.min(concept.duration, 10))
         : 2,
       easing: VALID_EASING_FUNCTIONS.includes(concept.easing) ? concept.easing : 'easeInOut'
     }
   }
 
   const createFallbackConcept = (prompt: string): AnimationConcept => {
-    // Create a sensible fallback based on common animation types
     const promptLower = prompt.toLowerCase()
     
     if (promptLower.includes('bounce') || promptLower.includes('ball')) {
@@ -218,7 +217,6 @@ export default function TextToAnimation() {
         easing: 'easeInOut'
       }
     } else {
-      // Generic fallback
       return {
         title: 'Custom Animation',
         description: `An animation based on: ${prompt}`,
@@ -243,7 +241,6 @@ export default function TextToAnimation() {
   }
 
   const getAnimationProperties = (concept: AnimationConcept) => {
-    // Different animation properties based on the concept content
     const titleLower = concept.title.toLowerCase()
     
     if (titleLower.includes('bounce')) {
@@ -274,7 +271,6 @@ export default function TextToAnimation() {
         }
       }
     } else {
-      // Default animation - gentle movement
       return {
         animate: {
           y: [0, -30, 0],
@@ -406,7 +402,7 @@ export default function TextToAnimation() {
               {/* Animation Preview */}
               {preview && concept && (
                 <motion.div
-                  key={animationKey} // Force re-render when concept changes
+                  key={animationKey}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="bg-black/30 rounded-2xl p-6 border border-white/10"
