@@ -10,7 +10,6 @@ interface AnimationConcept {
   easing: string
 }
 
-// Valid Framer Motion easing functions
 const VALID_EASING_FUNCTIONS = [
   'linear',
   'easeIn',
@@ -25,7 +24,6 @@ const VALID_EASING_FUNCTIONS = [
   'anticipate'
 ]
 
-// Quick animation presets for common requests
 const QUICK_ANIMATIONS = [
   {
     name: 'Bouncing Ball',
@@ -282,8 +280,6 @@ export default function TextToAnimation() {
   }
 
   const getAnimationTransition = (concept: AnimationConcept) => {
-    const animationProps = getAnimationProperties(concept)
-    
     return {
       duration: concept.duration,
       ease: concept.easing,
