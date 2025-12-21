@@ -284,7 +284,7 @@ const AICharacterAnimator: React.FC<AICharacterAnimatorProps> = () => {
       const fallbackImage = fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
       
       const fallbackCharacter = createFallbackCharacter(prompt);
-      fallbackCharacter.image = fallbackImage as any;
+      fallbackCharacter.image = fallbackImage;
       
       setGeneratedCharacters(prev => [...prev, fallbackCharacter]);
       setCharacterImages(prev => ({

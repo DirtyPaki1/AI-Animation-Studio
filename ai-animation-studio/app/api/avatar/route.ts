@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 
 // Check if OpenAI API key is available
@@ -6,7 +7,6 @@ let openai: any = null;
 
 if (hasOpenAIKey) {
   try {
-    const { OpenAI } = await import('openai');
     openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY!,
     });
